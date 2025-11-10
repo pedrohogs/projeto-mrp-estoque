@@ -1,0 +1,21 @@
+# Tratar todos os arquivos como "auto" por padrão.
+# O Git tentará adivinhar se é um arquivo de texto ou binário.
+* text=auto
+
+# Para arquivos de código-fonte, force o Git a armazená-los
+# internamente com LF (o padrão do Unix)
+*.js      text eol=lf
+*.jsx     text eol=lf
+*.css     text eol=lf
+*.scss    text eol=lf
+*.html    text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+*.sh      eol=lf
+
+# Para arquivos binários, diga ao Git para não mexer neles
+*.png     binary
+*.jpg     binary
+*.jpeg    binary
+*.gif     binary
+*.ico     binary
