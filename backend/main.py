@@ -1,5 +1,6 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
 from sqlmodel import Field, Session, SQLModel, create_engine, select
 from sqlalchemy.exc import IntegrityError
 import datetime
@@ -8,7 +9,12 @@ from fastapi import WebSocket, WebSocketDisconnect, BackgroundTasks, Path
 from typing import List
 import json # Vamos usar para formatar as mensagens
 import pandas as pd
-from statsmodels.tsa.arima.model import ARIMA
+# statsmodels nem sempre tem wheels para versões muito novas do Python (ex: 3.14).
+# Tornamos o ARIMA opcional para que a aplicação possa iniciar mesmo sem statsmodels.
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+except Exception:  # pragma: no cover - ambiente sem statsmodels
+    ARIMA = None
 
 class ConnectionManager:
     def __init__(self):
@@ -107,7 +113,20 @@ def criar_banco_e_tabelas():
 # 3. LÓGICA DA APLICAÇÃO
 
 # Cria a nossa aplicação (o "sous-chef")
-app = FastAPI(title="Meu Sistema MRP")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: cria o arquivo mrp.db e as tabelas (se não existirem)
+    criar_banco_e_tabelas()
+    try:
+        yield
+    finally:
+        # Lugar para ações de shutdown, se necessário no futuro
+        pass
+
+
+app = FastAPI(title="Meu Sistema MRP", lifespan=lifespan)
 # Lista de "origens" (front-ends) que podem falar com a gente
 origins = [
     "http://localhost:5173", # A porta do nosso front-end React/Vite
@@ -123,11 +142,9 @@ app.add_middleware(
     allow_headers=["*"],       # Permite todos os cabeçalhos
 )
 
-# Esta função será executada UMA VEZ quando o servidor ligar
-@app.on_event("startup")
-def ao_iniciar():
-    # Cria o arquivo mrp.db e as tabelas (se não existirem)
-    criar_banco_e_tabelas()
+# NOTE: startup/shutdown event decorators are deprecated in favor of
+# lifespan handlers. Database/table creation is handled in the
+# `lifespan` context manager above.
 
 
 # 4. NOSSA PRIMEIRA ROTA (ENDPOINT)
