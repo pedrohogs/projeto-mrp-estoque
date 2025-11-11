@@ -58,8 +58,8 @@ function App() {
     buscarProdutos()
     buscarHistorico() 
 
-    ws.current = new WebSocket('ws://127.0.0.1:8000/ws')
-    ws.current.onopen = () => console.log("WebSocket Conectado!")
+      const wsUrl = API_URL.replace(/^http/, 'ws') + '/ws';
+    ws.current = new WebSocket(wsUrl);    ws.current.onopen = () => console.log("WebSocket Conectado!")
     ws.current.onclose = () => console.log("WebSocket Desconectado.")
 
     ws.current.onmessage = (event) => {

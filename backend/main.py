@@ -152,21 +152,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Meu Sistema MRP", lifespan=lifespan)
 
+# ... (início do main.py)
+
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://projeto-mrp-estoque.vercel.app",
-    "https://projeto-mrp-estoque-git-main-pedros-projects-83eed66f.vercel.app" # Adicione todos os seus domínios da Vercel
+    "https://projeto-mrp-estoque.vercel.app", 
 ]
 
-# Adiciona o "porteiro" (Middleware) do CORS ao FastAPI
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,       # Permite as origens da lista
-    allow_credentials=True,    # Permite cookies (vamos precisar depois)
-    allow_methods=["*"],       # Permite todos os métodos (GET, POST, etc)
-    allow_headers=["*"],       # Permite todos os cabeçalhos
+    allow_origins=origins, # Agora ele confia no Vercel
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
+# ... (resto do main.py)
 
 # NOTE: startup/shutdown event decorators are deprecated in favor of
 # lifespan handlers. Database/table creation is handled in the
