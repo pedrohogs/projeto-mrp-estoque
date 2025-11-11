@@ -13,6 +13,7 @@ import pandas as pd
 # Tornamos o ARIMA opcional para que a aplicação possa iniciar mesmo sem statsmodels.
 import csv
 import io
+import os
 from starlette.responses import StreamingResponse
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -103,6 +104,21 @@ class ProdutoUpdate(SQLModel):
 
 
 # 2. CONFIGURAÇÃO DO BANCO DE DADOS
+
+# Pega o URL da base de dados online (do ambiente)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    # Estamos online (Produção) - Usar PostgreSQL
+    # Removemos o "sqlite:///" e preparamos para o PostgreSQL
+    # (O Render fornece um URL que começa com "postgres://", o SQLModel precisa "postgresql://")
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://")
+    engine = create_engine(DATABASE_URL, echo=False) 
+else:
+    # Estamos local (Desenvolvimento) - Usar SQLite
+    ARQUIVO_BANCO = "mrp.db"
+    sqlite_url = f"sqlite:///{ARQUIVO_BANCO}"
+    engine = create_engine(sqlite_url, echo=True)
 
 # O nome do arquivo do nosso banco de dados
 ARQUIVO_BANCO = "mrp.db" 
