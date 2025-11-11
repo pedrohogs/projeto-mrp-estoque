@@ -63,10 +63,6 @@ O projeto foi construído como um **monorepo**, separando as responsabilidades:
 ```bash
 git clone [https://github.com/pedrohogs/projeto-mrp-estoque.git](https://github.com/pedrohogs/projeto-mrp-estoque.git)
 cd projeto-mrp-estoque
-
-```bash
-git clone [https://github.com/pedrohogs/projeto-mrp-estoque.git](https://github.com/pedrohogs/projeto-mrp-estoque.git)
-cd projeto-mrp-estoque
 ```
 ### 2. Iniciando o Back-end (Terminal 1)
 
