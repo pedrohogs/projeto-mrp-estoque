@@ -11,6 +11,14 @@ import json # Vamos usar para formatar as mensagens
 import pandas as pd
 # statsmodels nem sempre tem wheels para versões muito novas do Python (ex: 3.14).
 # Tornamos o ARIMA opcional para que a aplicação possa iniciar mesmo sem statsmodels.
+import csv
+import io
+from starlette.responses import StreamingResponse
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+
 try:
     from statsmodels.tsa.arima.model import ARIMA
 except Exception:  # pragma: no cover - ambiente sem statsmodels
@@ -441,3 +449,101 @@ def atualizar_produto(sku: str, produto_update: ProdutoUpdate):
         session.commit()
         session.refresh(db_produto)
         return db_produto
+    
+    # ============================================
+# 15. ENDPOINT PARA EXPORTAR BALANÇO (CSV)
+# ============================================
+@app.get("/produtos/exportar_csv")
+def exportar_balanco_csv():
+    """
+    Gera um arquivo CSV com o balanço de todo o inventário.
+    """
+    # Usamos io.StringIO para criar um "arquivo" em memória
+    stream = io.StringIO()
+    writer = csv.writer(stream)
+    
+    # Escreve o cabeçalho
+    writer.writerow([
+        "Codigo (SKU)", 
+        "Nome", 
+        "Descricao", 
+        "Quantidade_Atual", 
+        "Ponto_de_Ressuprimento"
+    ])
+    
+    with Session(engine) as session:
+        produtos = session.exec(select(Produto)).all()
+        
+        # Escreve os dados de cada produto
+        for produto in produtos:
+            writer.writerow([
+                produto.sku,
+                produto.nome,
+                produto.descricao,
+                produto.quantidade_atual,
+                produto.ponto_ressuprimento
+            ])
+    
+    # Prepara a resposta para o navegador
+    response = StreamingResponse(iter([stream.getvalue()]), 
+                                 media_type="text/csv")
+    
+    # Força o navegador a baixar o arquivo com este nome
+    response.headers["Content-Disposition"] = "attachment; filename=balanco_estoque.csv"
+    return response
+
+# ============================================
+# 16. ENDPOINT PARA EXPORTAR BALANÇO (PDF)
+# ============================================
+@app.get("/produtos/exportar_pdf")
+def exportar_balanco_pdf():
+    """
+    Gera um arquivo PDF profissional com o balanço do inventário.
+    """
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elementos = []
+    styles = getSampleStyleSheet()
+
+    # 1. Título do Relatório
+    titulo = Paragraph("Balanço de Estoque - MRP Inteligente", styles['Title'])
+    elementos.append(titulo)
+    elementos.append(Spacer(1, 20)) # Espaço vazio
+
+    # 2. Preparar os dados para a tabela
+    # Cabeçalho da tabela
+    dados_tabela = [["Cód. (SKU)", "Nome", "Qtd. Atual", "Mínimo", "Status"]]
+
+    with Session(engine) as session:
+        produtos = session.exec(select(Produto)).all()
+        for p in produtos:
+            status = "BAIXO!" if p.quantidade_atual <= p.ponto_ressuprimento else "OK"
+            dados_tabela.append([
+                p.sku,
+                p.nome[:30], # Corta nomes muito longos para não quebrar a tabela
+                str(p.quantidade_atual),
+                str(p.ponto_ressuprimento),
+                status
+            ])
+
+    # 3. Criar e estilizar a tabela
+    tabela = Table(dados_tabela, colWidths=[80, 200, 60, 60, 60])
+    tabela.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.teal),      # Cor do cabeçalho
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke), # Cor do texto do cabeçalho
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),             # Alinhamento central
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),   # Fonte do cabeçalho
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),            # Espaçamento do cabeçalho
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),    # Cor das linhas de dados
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)        # Bordas da tabela
+    ]))
+
+    elementos.append(tabela)
+
+    # 4. Gerar o PDF
+    doc.build(elementos)
+    
+    # Preparar para envio
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", 
+                             headers={"Content-Disposition": "attachment; filename=balanco_estoque.pdf"})
