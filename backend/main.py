@@ -5,6 +5,7 @@ import io
 from enum import Enum
 from typing import List
 from contextlib import asynccontextmanager
+import os # Importar OS para as variáveis de ambiente
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, BackgroundTasks, Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
+from reportlab.lib import colors # Adicionado para a "tabela bonitinha"
 # --- Fim PDF ---
 
 # --- IA Imports ---
@@ -43,7 +45,7 @@ class ConnectionManager:
         self.active_connections.remove(websocket)
 
     async def broadcast(self, data: dict):
-        json_message = json.dumps(data, default=str) # Adiciona default=str por segurança
+        json_message = json.dumps(data, default=str)
         for connection in self.active_connections:
             await connection.send_text(json_message)
 
@@ -73,7 +75,6 @@ class Movimentacao(SQLModel, table=True):
     data_hora: datetime.datetime = Field(default_factory=datetime.datetime.now)
 
 # --- Modelos de "Payload" (O que a API recebe/envia) ---
-
 class MovimentacaoInput(SQLModel):
     sku: str
     tipo: TipoMovimentacao
@@ -96,11 +97,20 @@ class ProdutoUpdate(SQLModel):
 # ============================================
 # 3. CONFIGURAÇÃO DO BANCO DE DADOS E APP
 # ============================================
-ARQUIVO_BANCO = "mrp.db"
-sqlite_url = f"sqlite:///{ARQUIVO_BANCO}"
-# DATABASE_URL = os.environ.get("DATABASE_URL") # Descomente para deploy
-# engine = create_engine(DATABASE_URL) # Para deploy
-engine = create_engine(sqlite_url, echo=True) # Para dev local
+# Lógica para alternar entre BD local (SQLite) e BD de produção (PostgreSQL)
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+if DATABASE_URL:
+    # Estamos no Render (Produção)
+    print("Conectando ao PostgreSQL de produção...")
+    engine = create_engine(DATABASE_URL)
+else:
+    # Estamos localmente (Desenvolvimento)
+    print("Usando banco de dados SQLite local (mrp.db)...")
+    ARQUIVO_BANCO = "mrp.db"
+    sqlite_url = f"sqlite:///{ARQUIVO_BANCO}"
+    engine = create_engine(sqlite_url, connect_args={"check_same_thread": False}, echo=True)
+
 
 def criar_banco_e_tabelas():
     SQLModel.metadata.create_all(engine)
@@ -117,8 +127,8 @@ app = FastAPI(title="Meu Sistema MRP", lifespan=lifespan)
 origins = [
     "http://localhost:5173",
     "http://localhost:3000",
-    "https://projeto-mrp-estoque.vercel.app", # URL Vercel Principal
-    "https://projeto-mrp-estoque-git-main-pedros-projects-83eed66f.vercel.app" # URL do Deploy
+    "https://projeto-mrp-estoque.vercel.app", 
+    "https://projeto-mrp-estoque-git-main-pedros-projects-83eed66f.vercel.app" 
 ]
 
 app.add_middleware(
@@ -153,7 +163,7 @@ def criar_produto(produto: Produto):
 @app.get("/produtos", response_model=list[Produto])
 def listar_produtos():
     with Session(engine) as session:
-        produtos = session.exec(select(Produto)).all()
+        produtos = session.exec(select(Produto).order_by(Produto.nome)).all()
         return produtos
 
 @app.put("/produtos/{sku}", response_model=Produto)
@@ -215,7 +225,6 @@ async def criar_movimentacao(mov_input: MovimentacaoInput, background_tasks: Bac
         session.commit()
         session.refresh(produto)
         
-        # Dispara o WebSocket
         msg = {"tipo_msg": "atualizacao_estoque", "sku": produto.sku, "quantidade_atual": produto.quantidade_atual}
         background_tasks.add_task(manager.broadcast, msg)
         
@@ -233,7 +242,6 @@ async def criar_movimentacao(mov_input: MovimentacaoInput, background_tasks: Bac
 # --- ENDPOINTS DE HISTÓRICO E EXPORTAÇÃO (PDF/CSV) ---
 
 def fetch_historico(session: Session) -> list[MovimentacaoRead]:
-    """Função auxiliar para buscar e formatar o histórico."""
     statement = select(Movimentacao, Produto).where(Movimentacao.produto_id == Produto.id).order_by(Movimentacao.data_hora.desc())
     results = session.exec(statement).all()
     historico = []
@@ -246,6 +254,10 @@ def fetch_historico(session: Session) -> list[MovimentacaoRead]:
         )
     return historico
 
+def fetch_inventario(session: Session) -> list[Produto]:
+    """Função auxiliar para buscar o inventário ordenado."""
+    return session.exec(select(Produto).order_by(Produto.nome)).all()
+
 @app.get("/movimentacoes/historico", response_model=list[MovimentacaoRead])
 def get_historico_movimentacoes():
     with Session(engine) as session:
@@ -256,15 +268,11 @@ def get_historico_pdf():
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-
     p.setFont("Helvetica-Bold", 16)
     p.drawString(inch, height - inch, "Histórico de Movimentações do Estoque")
-    
-    p.setFont("Helvetica", 10)
+    p.setFont("Helvetica-Bold", 10)
     x = inch
     y = height - 1.5 * inch
-    
-    # Cabeçalho da Tabela
     headers = ["Data/Hora", "Cód.", "Produto", "Tipo", "Qtd"]
     col_widths = [1.5*inch, 1*inch, 2.5*inch, 0.8*inch, 0.5*inch]
     
@@ -275,27 +283,21 @@ def get_historico_pdf():
     y -= 0.25 * inch
     p.line(inch, y, width - inch, y)
     y -= 0.25 * inch
+    p.setFont("Helvetica", 10)
 
     with Session(engine) as session:
         historico = fetch_historico(session)
-        
         for item in historico:
             data_str = item.data_hora.strftime("%Y-%m-%d %H:%M")
             tipo_str = "Entrada" if item.tipo == TipoMovimentacao.ENTRADA else "Saída"
             qtd_str = f"+{item.quantidade}" if item.tipo == TipoMovimentacao.ENTRADA else f"-{item.quantidade}"
-            
             row = [data_str, item.produto_sku, item.produto_nome, tipo_str, qtd_str]
             x = inch
             for i, cell in enumerate(row):
-                p.drawString(x, y, str(cell))
+                p.drawString(x, y, str(cell)[:40])
                 x += col_widths[i]
             y -= 0.25 * inch
-            
-            if y < inch: # Paginação
-                p.showPage()
-                p.setFont("Helvetica", 10)
-                y = height - inch
-
+            if y < inch: p.showPage(); y = height - inch
     p.save()
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=historico_mrp.pdf"})
@@ -303,8 +305,7 @@ def get_historico_pdf():
 @app.get("/movimentacoes/historico/csv")
 def get_historico_csv():
     buffer = io.StringIO()
-    writer = csv.writer(buffer, delimiter=';') # Usando ; para Excel PT-BR
-    
+    writer = csv.writer(buffer, delimiter=';')
     headers = ["Data", "Hora", "Cód. Produto", "Nome Produto", "Tipo", "Quantidade"]
     writer.writerow(headers)
     
@@ -314,11 +315,80 @@ def get_historico_csv():
             data_str = item.data_hora.strftime("%Y-%m-%d")
             hora_str = item.data_hora.strftime("%H:%M:%S")
             tipo_str = "Entrada" if item.tipo == TipoMovimentacao.ENTRADA else "Saída"
-            qtd_str = f"+{item.quantidade}" if item.tipo == TipoMovimentacao.ENTRADA else f"-{item.quantidade}"
+            qtd_str = item.quantidade # Mudança: CSV puro deve ter números
             writer.writerow([data_str, hora_str, item.produto_sku, item.produto_nome, tipo_str, qtd_str])
             
     buffer.seek(0)
     return StreamingResponse(buffer, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=historico_mrp.csv"})
+
+# --- NOVOS ENDPOINTS (EXPORTAR INVENTÁRIO) ---
+
+@app.get("/produtos/inventario/csv")
+def get_inventario_csv():
+    buffer = io.StringIO()
+    writer = csv.writer(buffer, delimiter=';')
+    headers = ["Cód. Produto", "Nome", "Descrição", "Qtd. Atual", "Mín. Reposição"]
+    writer.writerow(headers)
+    
+    with Session(engine) as session:
+        inventario = fetch_inventario(session)
+        for item in inventario:
+            writer.writerow([item.sku, item.nome, item.descricao, item.quantidade_atual, item.ponto_ressuprimento])
+            
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="text/csv", headers={"Content-Disposition": "attachment; filename=inventario_mrp.csv"})
+
+@app.get("/produtos/inventario/pdf")
+def get_inventario_pdf():
+    buffer = io.BytesIO()
+    p = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+    p.setFont("Helvetica-Bold", 16)
+    p.drawString(inch, height - inch, "Relatório de Inventário Atual")
+    p.setFont("Helvetica-Bold", 10)
+    x = inch
+    y = height - 1.5 * inch
+    
+    headers = ["Cód.", "Nome", "Qtd. Atual", "Mín. Reposição", "Status"]
+    col_widths = [1.2*inch, 3*inch, 1*inch, 1.2*inch, 1*inch]
+    
+    for i, header in enumerate(headers):
+        p.drawString(x, y, header)
+        x += col_widths[i]
+    
+    y -= 0.25 * inch
+    p.line(inch, y, width - inch, y)
+    y -= 0.25 * inch
+    p.setFont("Helvetica", 10)
+
+    with Session(engine) as session:
+        inventario = fetch_inventario(session)
+        for item in inventario:
+            status_str = "BAIXO" if item.quantidade_atual <= item.ponto_ressuprimento else "OK"
+            row = [item.sku, item.nome, str(item.quantidade_atual), str(item.ponto_ressuprimento), status_str]
+            x = inch
+            
+            if len(row[1]) > 40: row[1] = row[1][:37] + "..." # Trunca nomes longos
+
+            for i, cell in enumerate(row):
+                if status_str == "BAIXO" and i == 4:
+                    p.setFillColor(colors.red)
+                else:
+                    p.setFillColor(colors.black)
+                p.drawString(x, y, cell)
+                x += col_widths[i]
+                
+            y -= 0.25 * inch
+            if y < inch: 
+                p.showPage()
+                p.setFont("Helvetica-Bold", 10); x = inch; y = height - 1.5 * inch
+                for i, header in enumerate(headers): p.drawString(x, y, header); x += col_widths[i]
+                y -= 0.25 * inch; p.line(inch, y, width - inch, y); y -= 0.25 * inch
+                p.setFont("Helvetica", 10)
+
+    p.save()
+    buffer.seek(0)
+    return StreamingResponse(buffer, media_type="application/pdf", headers={"Content-Disposition": "attachment; filename=inventario_mrp.pdf"})
 
 # --- ENDPOINT DE IA (PREVISÃO) ---
 
@@ -356,7 +426,7 @@ def prever_estoque(sku: str = Path(..., title="SKU do produto")):
             if previsao_media <= 0.1:
                  return {"sku": sku, "previsao_dias": None, "media_saida_diaria_prevista": 0, "mensagem": "Baixa movimentação recente. Não há risco imediato."}
 
-            dias_restantes = round(produto.quantidade_atual / previsao_media, 1) # Arredondado para 1 casa decimal
+            dias_restantes = round(produto.quantidade_atual / previsao_media, 1)
 
             return {
                 "sku": sku,

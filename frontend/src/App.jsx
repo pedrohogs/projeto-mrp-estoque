@@ -60,7 +60,9 @@ function App() {
         setProdutos(produtosRes.data)
         setHistorico(historicoRes.data)
       } catch (error) {
-        toast({ title: 'Erro ao carregar dados.', description: 'Verifique a conexão com a API.', status: 'error', duration: 5000, isClosable: true })
+        // --- CORREÇÃO AQUI ---
+        console.error("Erro ao carregar dados iniciais:", error)
+        toast({ title: 'Erro ao carregar dados.', description: error.message, status: 'error', duration: 5000, isClosable: true })
       }
       setIsLoading(false) 
     }
@@ -124,7 +126,9 @@ function App() {
       setFormData({ sku: '', nome: '', descricao: '', quantidade_atual: 0, ponto_ressuprimento: 5 })
       toast({ title: 'Produto cadastrado com sucesso!', status: 'success', duration: 3000, isClosable: true })
     } catch (error) {
-      toast({ title: 'Erro ao cadastrar.', description: error.response?.data?.detail, status: 'error', duration: 3000, isClosable: true })
+      // --- CORREÇÃO AQUI ---
+      console.error("Erro ao cadastrar produto:", error)
+      toast({ title: 'Erro ao cadastrar.', description: error.response?.data?.detail || error.message, status: 'error', duration: 3000, isClosable: true })
     }
   }
 
@@ -144,7 +148,9 @@ function App() {
       setMovData(prev => ({ ...prev, sku: null, quantidade: 1 }))
       toast({ title: 'Movimentação registrada!', status: 'success', duration: 2000, isClosable: true })
     } catch (error) {
-      toast({ title: 'Erro na movimentação.', description: error.response?.data?.detail, status: 'error', duration: 3000, isClosable: true })
+      // --- CORREÇÃO AQUI ---
+      console.error("Erro na movimentação:", error)
+      toast({ title: 'Erro na movimentação.', description: error.response?.data?.detail || error.message, status: 'error', duration: 3000, isClosable: true })
     }
   }
 
@@ -161,7 +167,9 @@ function App() {
       buscarHistorico()
       toast({ title: 'Produto excluído.', status: 'info', duration: 3000, isClosable: true })
     } catch (error) {
-        toast({ title: 'Erro ao excluir.', description: error.response?.data?.detail, status: 'error', duration: 3000, isClosable: true })
+      // --- CORREÇÃO AQUI ---
+      console.error("Erro ao excluir:", error)
+      toast({ title: 'Erro ao excluir.', description: error.response?.data?.detail || error.message, status: 'error', duration: 3000, isClosable: true })
     }
     onAlertClose() 
     setSkuParaExcluir(null) 
@@ -185,7 +193,9 @@ function App() {
       toast({ title: 'Produto atualizado!', status: 'success', duration: 3000, isClosable: true })
       onEditClose()
     } catch (error) {
-      toast({ title: 'Erro ao atualizar.', description: error.response?.data?.detail, status: 'error', duration: 3000, isClosable: true })
+      // --- CORREÇÃO AQUI ---
+      console.error("Erro ao atualizar:", error)
+      toast({ title: 'Erro ao atualizar.', description: error.response?.data?.detail || error.message, status: 'error', duration: 3000, isClosable: true })
     }
   }
 
@@ -198,7 +208,9 @@ function App() {
       setPrevisaoData(response.data)
       onPrevisaoOpen()
     } catch (error) {
-      toast({ title: 'Erro na previsão.', description: error.response?.data?.detail, status: 'error', duration: 4000, isClosable: true })
+      // --- CORREÇÃO AQUI ---
+      console.error("Erro na previsão:", error)
+      toast({ title: 'Erro na previsão.', description: error.response?.data?.detail || error.message, status: 'error', duration: 4000, isClosable: true })
     } finally {
       setIsLoadingIA(false)
     }
@@ -252,7 +264,7 @@ function App() {
         isClosable: true 
       })
     }
-  } // <-- ESTA É A CHAVE '}' QUE FALTAVA
+  }
 
 
   // --- O HTML (INTERFACE) ---
