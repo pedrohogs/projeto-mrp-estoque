@@ -1,93 +1,103 @@
-# 📦 Sistema MRP Inteligente
+# 📦 Sistema MRP Inteligente (Full-Stack)
 
-> Um sistema completo de Planejamento de Recursos de Manufatura com controle de estoque em tempo real e previsões baseadas em IA.
+> Um sistema completo de controle de inventário (MRP) com atualizações em tempo real, dashboard visual e previsões de estoque baseadas em IA.
 
-![Badge em Desenvolvimento](http://img.shields.io/static/v1?label=STATUS&message=EM%20DESENVOLVIMENTO&color=GREEN&style=for-the-badge)
+## 🚀 Links do Projeto (Online)
 
----
+| Aplicação (Front-end) | Documentação (Back-end) | 
+ | ----- | ----- | 
+| 🔗 [**Acesse a aplicação aqui**](https://projeto-mrp-estoque.vercel.app/) | 🔗 [**Acesse a API aqui**](https://projeto-mrp-estoque.onrender.com/docs) | 
 
 ## 🖼️ Screenshots
 
-| Dashboard | Inventário |
-|---|---|
-| ![Dashboard](.github/assets/dashboard.png) | ![Inventário](.github/assets/inventario.png) |
+| Dashboard (Gráficos) | Inventário (Tabela) | 
+ | ----- | ----- | 
+| ![Dashboard](.github/assets/dashboard.png) | ![Inventário](.github/assets/inventario.png) | 
 
----
+## ✨ Funcionalidades Principais
 
-## ✨ Funcionalidades
+* **CRUD Completo:** Gestão total de produtos (Criar, Ler, Editar e Excluir).
 
-Este projeto não é apenas um CRUD. Ele inclui recursos avançados:
+* **Tempo Real (WebSockets):** Qualquer movimentação de estoque atualiza a interface de **todos** os usuários conectados instantaneamente.
 
-✅ **Controle Total (CRUD):** Cadastro, edição e exclusão de produtos com interface amigável.
-✅ **Tempo Real (WebSockets):** Se um usuário move o estoque, todos os outros veem a mudança instantaneamente sem recarregar a página.
-✅ **Rastreabilidade Completa:** Histórico detalhado de cada entrada e saída, com datas e quantidades.
-✅ **Inteligência Artificial:** Previsão de demanda usando o modelo estatístico ARIMA para estimar quando o estoque acabará.
-✅ **Dashboard Visual:** Gráficos interativos para análise rápida da saúde do estoque.
+* **Dashboard Visual:** Gráficos interativos (com `recharts`) que comparam o estoque atual com o ponto mínimo de reposição.
 
----
+* **Histórico Completo:** Uma aba dedicada que registra cada entrada e saída de produtos para rastreabilidade total.
+
+* **IA Preditiva (Statsmodels):** Um modelo ARIMA que analisa o histórico de saídas e prevê em quantos dias o estoque de um item irá acabar.
+
+* **Interface Profissional (Chakra UI):** Componentes modernos, incluindo Modais para formulários, Alertas de confirmação e "Skeletons" de carregamento para uma melhor experiência do usuário.
 
 ## 🛠️ Tecnologias Utilizadas
 
-O projeto foi construído utilizando um moderno **Monorepo**, dividindo responsabilidades de forma clara:
+O projeto foi construído como um **monorepo**, separando as responsabilidades:
 
-### Back-end (API & IA)
-* 🐍 **Python 3.11+**
-* ⚡ **FastAPI** (Framework de alta performance)
-* 🗃️ **SQLModel & SQLite** (Banco de dados)
-* 🧠 **Statsmodels & Pandas** (IA e análise de dados)
-* 🔌 **WebSockets** (Comunicação em tempo real)
+#### `backend/`
 
-### Front-end (Interface)
-* ⚛️ **React.js** (via Vite)
-* 💅 **Chakra UI** (Biblioteca de componentes visuais)
-* 📊 **Recharts** (Gráficos para o dashboard)
-* 📡 **Axios** (Comunicação com a API)
+* **Python 3.11+**
 
----
+* **FastAPI:** Para a criação da API RESTful e WebSockets.
 
-## 🚀 Como Rodar o Projeto
+* **SQLModel & SQLite:** Para a gestão da base de dados (pronto para migrar para PostgreSQL).
 
-Siga estes passos para ter o ambiente de desenvolvimento completo rodando na sua máquina.
+* **Pandas & Statsmodels:** Para a análise e previsão da IA.
 
-💡 **Dica:** Os comandos abaixo devem ser executados no **Terminal Integrado do VS Code**. Você pode abrir novos terminais clicando no ícone `+` ou usando o atalho `Ctrl + Shift + '`.
+* **ReportLab:** Para a geração de relatórios em PDF.
 
-### 1. Pré-requisitos
-Certifique-se de ter instalado:
-* [Git](https://git-scm.com/)
-* [Python 3.10+](https://www.python.org/)
-* [Node.js 18+](https://nodejs.org/)
+#### `frontend/`
 
-### 2. Clonar o Repositório
+* **React (Vite):** Para a interface de usuário reativa.
+
+* **Chakra UI:** Para a biblioteca de componentes visuais (Tabelas, Modais, Alertas, Gráficos).
+
+* **Recharts:** Para os gráficos do dashboard.
+
+* **Axios:** Para a comunicação com a API.
+
+## 🚀 Como Executar Localmente
+
+> 💡 **Nota:** Todos os comandos devem ser executados no **Terminal Integrado do VS Code**, a partir da pasta raiz do projeto.
+
+### 1. Clonar o Repositório
+
+```bash
+git clone [https://github.com/pedrohogs/projeto-mrp-estoque.git](https://github.com/pedrohogs/projeto-mrp-estoque.git)
+cd projeto-mrp-estoque
 
 ```bash
 git clone [https://github.com/pedrohogs/projeto-mrp-estoque.git](https://github.com/pedrohogs/projeto-mrp-estoque.git)
 cd projeto-mrp-estoque
 ```
-### 3. Iniciando o Back-end (Terminal 1)
+### 2. Iniciando o Back-end (Terminal 1)
 
 ```bash
+# Navegue até a pasta do backend
 cd backend
-python -m venv .venv
-```
-### 4. Ativar o ambiente virtual:
-##### No Windows (PowerShell): 
-```bash
-.\.venv\Scripts\activate
-```
 
-##### No Mac/Linux: source .venv/bin/activate
-```bash
+# Crie o ambiente virtual
+python -m venv .venv
+
+# Ative o ambiente virtual:
+# No Windows (PowerShell):
+.\.venv\Scripts\activate
+# No Mac/Linux:
+# source .venv/bin/activate
+
+# Instale os pacotes
 pip install -r requirements.txt
+
+# Rode o servidor
 python -m uvicorn main:app --reload
 ```
-O servidor estará rodando! Acesse a documentação interativa em: http://127.0.0.1:8000/docs
+O back-end estará disponível em: http://127.0.0.1:8000/docs
 
-### 5. Iniciando o Front-end (Terminal 2)
+### 3. Iniciar o Front-end (Terminal 2)
+
+Abra um novo terminal no VS Code (mantendo o primeiro rodando) e execute:
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Acesse o sistema em: http://localhost:5173
-
+A aplicação estará disponível em: http://localhost:5173
