@@ -7,17 +7,24 @@ import {
   Container, Card, CardHeader, CardBody,
   useDisclosure, Modal, ModalOverlay, ModalContent,
   ModalHeader, ModalFooter, ModalBody, ModalCloseButton,
-  Spinner, Tabs, TabList, TabPanels, TabPanel, Tab
+  Spinner, Tabs, TabList, TabPanels, TabPanel, Tab,
+  // --- NOVAS IMPORTAÇÕES ---
+  AlertDialog, AlertDialogBody, AlertDialogFooter, AlertDialogHeader, 
+  AlertDialogContent, AlertDialogOverlay,
+  Skeleton // Para o loading
 } from '@chakra-ui/react'
 
 import EstoqueChart from './EstoqueChart' 
 
-const API_URL = 'http://127.0.0.1:8000'
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000';
 
 function App() {
   // --- ESTADOS ---
   const [produtos, setProdutos] = useState([])
   const [historico, setHistorico] = useState([])
+  // --- NOVO ESTADO DE LOADING ---
+  const [isLoading, setIsLoading] = useState(true) // Começa carregando
+
   const [formData, setFormData] = useState({
     sku: '', nome: '', descricao: '', quantidade_atual: 0, ponto_ressuprimento: 5
   })
@@ -25,40 +32,49 @@ function App() {
     sku: '', tipo: 'entrada', quantidade: 1
   })
   const [alerta, setAlerta] = useState("")
+  
+  // Hooks para os Modais
   const { isOpen: isPrevisaoOpen, onOpen: onPrevisaoOpen, onClose: onPrevisaoClose } = useDisclosure()
+  const { isOpen: isEditOpen, onOpen: onEditOpen, onClose: onEditClose } = useDisclosure()
+  // --- NOVO HOOK E ESTADO PARA O ALERTA DE EXCLUSÃO ---
+  const { isOpen: isAlertOpen, onOpen: onAlertOpen, onClose: onAlertClose } = useDisclosure()
+  const [skuParaExcluir, setSkuParaExcluir] = useState(null)
+  const cancelRef = useRef() // Referência para o botão de cancelar (acessibilidade)
+
   const [previsaoData, setPrevisaoData] = useState(null)
   const [isLoadingIA, setIsLoadingIA] = useState(false)
-  const { isOpen: isEditOpen, onOpen: onEditOpen, onClose: onEditClose } = useDisclosure()
   const [produtoEmEdicao, setProdutoEmEdicao] = useState(null)
+  
   const toast = useToast()
   const ws = useRef(null);
 
-  // --- FUNÇÃO AUXILIAR: BUSCAR HISTÓRICO ---
-  const buscarHistorico = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/movimentacoes/historico`)
-      setHistorico(response.data)
-    } catch (error) {
-      console.error("Erro ao buscar histórico:", error)
-    }
-  }
-
-  // --- EFEITOS ---
+  // --- EFEITOS (O que acontece ao carregar) ---
   useEffect(() => {
-    const buscarProdutos = async () => {
+    // Função unificada para carregar dados iniciais
+    const carregarDadosIniciais = async () => {
+      setIsLoading(true) // Liga o skeleton
       try {
-        const response = await axios.get(`${API_URL}/produtos`)
-        setProdutos(response.data)
+        // Roda as buscas em paralelo para ser mais rápido
+        const [produtosRes, historicoRes] = await Promise.all([
+          axios.get(`${API_URL}/produtos`),
+          axios.get(`${API_URL}/movimentacoes/historico`)
+        ]);
+        setProdutos(produtosRes.data)
+        setHistorico(historicoRes.data)
       } catch (error) {
-        console.error("Erro ao buscar produtos:", error)
-        toast({ title: 'Erro ao buscar produtos.', status: 'error', duration: 3000, isClosable: true })
+        console.error("Erro ao buscar dados:", error)
+        toast({ title: 'Erro ao carregar dados.', description: 'Verifique a conexão com a API.', status: 'error', duration: 5000, isClosable: true })
       }
+      setIsLoading(false) // Desliga o skeleton
     }
     
-    buscarProdutos()
-    buscarHistorico() 
+    carregarDadosIniciais() 
 
-    ws.current = new WebSocket('ws://127.0.0.1:8000/ws')
+    // Conectar ao WebSocket (Lógica para funcionar online e local)
+    // Se a API_URL for https://... onrender.com, ela vira wss://... onrender.com
+    const wsUrl = API_URL.replace(/^http/, 'ws') + '/ws';
+    ws.current = new WebSocket(wsUrl)
+    
     ws.current.onopen = () => console.log("WebSocket Conectado!")
     ws.current.onclose = () => console.log("WebSocket Desconectado.")
 
@@ -83,10 +99,21 @@ function App() {
     }
   }, [toast])
 
-  // --- HANDLERS ---
+  // --- FUNÇÃO AUXILIAR: BUSCAR HISTÓRICO ---
+  const buscarHistorico = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/movimentacoes/historico`)
+      setHistorico(response.data)
+    } catch (error) {
+      console.error("Erro ao buscar histórico:", error)
+    }
+  }
+
+  // --- HANDLERS (Formulários) ---
   const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value })
   const handleMovChange = (e) => setMovData({ ...movData, [e.target.name]: e.target.value })
 
+  // --- FUNÇÕES DE AÇÃO (CRUD) ---
   const handleSubmit = async (e) => {
     e.preventDefault()
     const dadosEnvio = { ...formData, quantidade_atual: parseInt(formData.quantidade_atual), ponto_ressuprimento: parseInt(formData.ponto_ressuprimento) }
@@ -110,14 +137,20 @@ function App() {
     try {
       await axios.post(`${API_URL}/movimentacoes`, dadosEnvio)
       setMovData({ ...movData, sku: '', quantidade: 1 })
-      toast({ title: 'Movimentação registrada!', status: 'success', duration: 2000, isClosable: true }) // MUDANÇA AQUI
+      toast({ title: 'Movimentação registrada!', status: 'success', duration: 2000, isClosable: true })
     } catch (error) {
       toast({ title: 'Erro na movimentação.', description: error.response?.data?.detail, status: 'error', duration: 3000, isClosable: true })
     }
   }
 
-  const handleDelete = async (skuParaExcluir) => {
-    if (!confirm(`Tem certeza que deseja excluir o produto ${skuParaExcluir}?`)) return;
+  // --- FUNÇÕES DE EXCLUSÃO (Agora em 2 partes) ---
+  const abrirConfirmacaoExcluir = (sku) => {
+    setSkuParaExcluir(sku);
+    onAlertOpen();
+  };
+
+  const handleDelete = async () => {
+    if (!skuParaExcluir) return;
     try {
       await axios.delete(`${API_URL}/produtos/${skuParaExcluir}`)
       setProdutos(produtos.filter(p => p.sku !== skuParaExcluir))
@@ -126,8 +159,11 @@ function App() {
     } catch (error) {
         toast({ title: 'Erro ao excluir.', description: error.response?.data?.detail, status: 'error', duration: 3000, isClosable: true })
     }
+    onAlertClose() 
+    setSkuParaExcluir(null) 
   }
 
+  // --- FUNÇÕES DE EDIÇÃO (CRUD) ---
   const handleAbrirEdicao = (produto) => {
     setProdutoEmEdicao(produto)
     onEditOpen()
@@ -150,6 +186,7 @@ function App() {
     }
   }
 
+  // --- FUNÇÃO IA (PREVISÃO) ---
   const handlePrevisao = async (skuParaPrever) => {
     setIsLoadingIA(true)
     setPrevisaoData(null)
@@ -164,7 +201,7 @@ function App() {
     }
   }
 
-  // --- O HTML ---
+  // --- O HTML (INTERFACE) ---
   return (
     <Container maxW="container.xl" p={5}>
       {alerta && (
@@ -174,7 +211,6 @@ function App() {
       <VStack spacing={8} align="stretch">
         <Box textAlign="center">
           <Heading as="h1" size="2xl" color="teal.500">Sistema MRP Inteligente</Heading>
-          {/* MUDANÇA AQUI */}
           <Text color="gray.500">Controle de Estoque em Tempo Real</Text> 
         </Box>
 
@@ -200,7 +236,6 @@ function App() {
                           <Input name="descricao" value={formData.descricao} onChange={handleChange} placeholder="Descrição (Opcional)" focusBorderColor="teal.500" />
                           <HStack width="100%">
                             <Input name="quantidade_atual" type="number" value={formData.quantidade_atual} onChange={handleChange} placeholder="Qtd. Inicial" focusBorderColor="teal.500" />
-                            {/* MUDANÇA AQUI */}
                             <Input name="ponto_ressuprimento" type="number" value={formData.ponto_ressuprimento} onChange={handleChange} placeholder="Mínimo (Reposição)" focusBorderColor="teal.500" />
                           </HStack>
                           <Button type="submit" colorScheme="teal" width="full">Cadastrar Produto</Button>
@@ -220,80 +255,100 @@ function App() {
                           </Select>
                           <Input name="quantidade" type="number" value={movData.quantidade} onChange={handleMovChange} placeholder="Quantidade" min="1" required bg="white" />
                           <Button type="submit" colorScheme={movData.tipo === 'entrada' ? 'green' : 'red'} width="full">
-                            {/* MUDANÇA AQUI */}
-                            Registrar {movData.tipo === 'entrada' ? 'Entrada' : 'Saída'} 
+                            Registrar {movData.tipo === 'entrada' ? 'Entrada' : 'Saída'}
                           </Button>
                         </VStack>
                       </form>
                     </CardBody>
                   </Card>
                 </Flex>
+                
+                {/* Tabela de Inventário com SKELETON */}
                 <Card variant="outline" width="100%">
                   <CardHeader><Heading size="lg">📋 Inventário Atual</Heading></CardHeader>
                   <CardBody overflowX="auto">
-                    <Table variant="simple">
-                      <Thead bg="gray.100">
-                        {/* MUDANÇA AQUI */}
-                        <Tr><Th>Cód.</Th><Th>Nome</Th><Th isNumeric>Qtd. Atual</Th><Th isNumeric>Mín. Reposição</Th><Th>Status</Th><Th>Ações</Th></Tr>
-                      </Thead>
-                      <Tbody>
-                        {produtos.map(produto => {
-                          const isLowStock = produto.quantidade_atual <= produto.ponto_ressuprimento;
-                          return (
-                            <Tr key={produto.sku} bg={isLowStock ? 'red.50' : 'white'}>
-                              <Td fontWeight="bold">{produto.sku}</Td><Td>{produto.nome}</Td>
-                              <Td isNumeric fontSize="lg" fontWeight="bold" color={isLowStock ? 'red.500' : 'black'}>{produto.quantidade_atual}</Td>
-                              <Td isNumeric>{produto.ponto_ressuprimento}</Td>
-                              <Td>{isLowStock ? <Badge colorScheme="red">Estoque Baixo</Badge> : <Badge colorScheme="green">OK</Badge>}</Td>
-                              <Td>
-                                <HStack spacing={2}>
-                                  <Button colorScheme="purple" size="sm" onClick={() => handlePrevisao(produto.sku)} isLoading={isLoadingIA}>📊 Prever</Button>
-                                  <Button colorScheme="blue" size="sm" onClick={() => handleAbrirEdicao(produto)}>Editar</Button>
-                                  <Button colorScheme="red" size="sm" onClick={() => handleDelete(produto.sku)}>Excluir</Button>
-                                </HStack>
-                              </Td>
-                            </Tr>
-                          )
-                        })}
-                      </Tbody>
-                    </Table>
+                    {isLoading ? (
+                      <VStack spacing={4} mt={4}>
+                        <Skeleton height='40px' width="100%" borderRadius="md" />
+                        <Skeleton height='40px' width="100%" borderRadius="md" />
+                        <Skeleton height='40px' width="100%" borderRadius="md" />
+                      </VStack>
+                    ) : (
+                      <Table variant="simple">
+                        <Thead bg="gray.100">
+                          <Tr><Th>Cód.</Th><Th>Nome</Th><Th isNumeric>Qtd. Atual</Th><Th isNumeric>Mín. Reposição</Th><Th>Status</Th><Th>Ações</Th></Tr>
+                        </Thead>
+                        <Tbody>
+                          {produtos.map(produto => {
+                            const isLowStock = produto.quantidade_atual <= produto.ponto_ressuprimento;
+                            return (
+                              <Tr key={produto.sku} bg={isLowStock ? 'red.50' : 'white'}>
+                                <Td fontWeight="bold">{produto.sku}</Td><Td>{produto.nome}</Td>
+                                <Td isNumeric fontSize="lg" fontWeight="bold" color={isLowStock ? 'red.500' : 'black'}>{produto.quantidade_atual}</Td>
+                                <Td isNumeric>{produto.ponto_ressuprimento}</Td>
+                                <Td>{isLowStock ? <Badge colorScheme="red">Estoque Baixo</Badge> : <Badge colorScheme="green">OK</Badge>}</Td>
+                                <Td>
+                                  <HStack spacing={2}>
+                                    <Button colorScheme="purple" size="sm" onClick={() => handlePrevisao(produto.sku)} isLoading={isLoadingIA}>📊 Prever</Button>
+                                    <Button colorScheme="blue" size="sm" onClick={() => handleAbrirEdicao(produto)}>Editar</Button>
+                                    <Button colorScheme="red" size="sm" onClick={() => abrirConfirmacaoExcluir(produto.sku)}>Excluir</Button>
+                                  </HStack>
+                                </Td>
+                              </Tr>
+                            )
+                          })}
+                        </Tbody>
+                      </Table>
+                    )}
                   </CardBody>
                 </Card>
               </VStack>
             </TabPanel>
 
-            {/* ABA 2: HISTÓRICO */}
+            {/* ABA 2: HISTÓRICO com SKELETON */}
             <TabPanel p={0}>
               <Card variant="outline">
                 <CardHeader>
                   <Heading size="lg">Histórico de Movimentações</Heading>
-                  {/* MUDANÇA AQUI */}
                   <Text color="gray.500">Todas as entradas e saídas registradas (mais recentes primeiro)</Text> 
                 </CardHeader>
                 <CardBody overflowX="auto">
-                  <Table variant="simple">
-                    <Thead bg="gray.100"><Tr><Th>Data & Hora</Th><Th>Cód.</Th><Th>Produto</Th><Th>Tipo</Th><Th isNumeric>Quantidade</Th></Tr></Thead>
-                    <Tbody>
-                      {historico.map(mov => (
-                        <Tr key={mov.id}>
-                          <Td>{new Date(mov.data_hora).toLocaleString('pt-BR')}</Td>
-                          <Td fontWeight="bold">{mov.produto_sku}</Td><Td>{mov.produto_nome}</Td>
-                          <Td>{mov.tipo === 'entrada' ? <Badge colorScheme="green">Entrada</Badge> : <Badge colorScheme="red">Saída</Badge>}</Td>
-                          <Td isNumeric fontWeight="bold">{mov.tipo === 'entrada' ? '+' : '-'} {mov.quantidade}</Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
+                  {isLoading ? (
+                    <VStack spacing={4} mt={4}>
+                      <Skeleton height='30px' width="100%" borderRadius="md" />
+                      <Skeleton height='30px' width="100%" borderRadius="md" />
+                      <Skeleton height='30px' width="100%" borderRadius="md" />
+                      <Skeleton height='30px' width="100%" borderRadius="md" />
+                    </VStack>
+                  ) : (
+                    <Table variant="simple">
+                      <Thead bg="gray.100"><Tr><Th>Data & Hora</Th><Th>Cód.</Th><Th>Produto</Th><Th>Tipo</Th><Th isNumeric>Quantidade</Th></Tr></Thead>
+                      <Tbody>
+                        {historico.map(mov => (
+                          <Tr key={mov.id}>
+                            <Td>{new Date(mov.data_hora).toLocaleString('pt-BR')}</Td>
+                            <Td fontWeight="bold">{mov.produto_sku}</Td><Td>{mov.produto_nome}</Td>
+                            <Td>{mov.tipo === 'entrada' ? <Badge colorScheme="green">Entrada</Badge> : <Badge colorScheme="red">Saída</Badge>}</Td>
+                            <Td isNumeric fontWeight="bold">{mov.tipo === 'entrada' ? '+' : '-'} {mov.quantidade}</Td>
+                          </Tr>
+                        ))}
+                      </Tbody>
+                    </Table>
+                  )}
                 </CardBody>
               </Card>
             </TabPanel>
 
-            {/* ABA 3: DASHBOARD */}
+            {/* ABA 3: DASHBOARD com SKELETON */}
             <TabPanel p={0}>
               <Card variant="outline">
                 <CardHeader><Heading size="lg">Dashboard de Estoque</Heading></CardHeader>
                 <CardBody>
-                  <EstoqueChart data={produtos} />
+                  {isLoading ? (
+                    <Skeleton height='400px' width="100%" borderRadius="md" />
+                  ) : (
+                    <EstoqueChart data={produtos} />
+                  )}
                 </CardBody>
               </Card>
             </TabPanel>
@@ -301,6 +356,8 @@ function App() {
         </Tabs>
       </VStack>
 
+      {/* --- MODAIS (Ficam no final) --- */}
+      
       {/* MODAL IA */}
       <Modal isOpen={isPrevisaoOpen} onClose={onPrevisaoClose} isCentered size="lg">
         <ModalOverlay backdropFilter='blur(5px)' />
@@ -329,21 +386,56 @@ function App() {
 
       {/* MODAL EDIÇÃO */}
       <Modal isOpen={isEditOpen} onClose={onEditClose}>
-        <ModalHeader>✏️ Editar Produto</ModalHeader>
-        <ModalCloseButton />
-        <ModalBody>
-          {produtoEmEdicao && (
-            <VStack spacing={4}>
-              <Box w="100%"><Text mb="8px" fontWeight="bold" color="gray.500">Cód. Produto (Não editável):</Text><Input value={produtoEmEdicao.sku} isDisabled bg="gray.100" /></Box>
-              <Box w="100%"><Text mb="8px" fontWeight="bold">Nome:</Text><Input value={produtoEmEdicao.nome} onChange={(e) => setProdutoEmEdicao({ ...produtoEmEdicao, nome: e.target.value })} /></Box>
-              <Box w="100%"><Text mb="8px" fontWeight="bold">Descrição:</Text><Input value={produtoEmEdicao.descricao} onChange={(e) => setProdutoEmEdicao({ ...produtoEmEdicao, descricao: e.target.value })} /></Box>
-              {/* MUDANÇA AQUI */}
-              <Box w="100%"><Text mb="8px" fontWeight="bold">Ponto de Reposição (Mínimo):</Text><Input type="number" value={produtoEmEdicao.ponto_ressuprimento} onChange={(e) => setProdutoEmEdicao({ ...produtoEmEdicao, ponto_ressuprimento: e.target.value })} /></Box>
-            </VStack>
-          )}
-        </ModalBody>
-        <ModalFooter><Button variant="ghost" mr={3} onClick={onEditClose}>Cancelar</Button><Button colorScheme="blue" onClick={handleSalvarEdicao}>Salvar Alterações</Button></ModalFooter>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>✏️ Editar Produto</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {produtoEmEdicao && (
+              <VStack spacing={4}>
+                <Box w="100%"><Text mb="8px" fontWeight="bold" color="gray.500">Cód. Produto (Não editável):</Text><Input value={produtoEmEdicao.sku} isDisabled bg="gray.100" /></Box>
+                <Box w="100%"><Text mb="8px" fontWeight="bold">Nome:</Text><Input value={produtoEmEdicao.nome} onChange={(e) => setProdutoEmEdicao({ ...produtoEmEdicao, nome: e.target.value })} /></Box>
+                <Box w="100%"><Text mb="8px" fontWeight="bold">Descrição:</Text><Input value={produtoEmEdicao.descricao} onChange={(e) => setProdutoEmEdicao({ ...produtoEmEdicao, descricao: e.target.value })} /></Box>
+                <Box w="100%"><Text mb="8px" fontWeight="bold">Ponto de Reposição (Mínimo):</Text><Input type="number" value={produtoEmEdicao.ponto_ressuprimento} onChange={(e) => setProdutoEmEdicao({ ...produtoEmEdicao, ponto_ressuprimento: e.target.value })} /></Box>
+              </VStack>
+            )}
+          </ModalBody>
+          <ModalFooter><Button variant="ghost" mr={3} onClick={onEditClose}>Cancelar</Button><Button colorScheme="blue" onClick={handleSalvarEdicao}>Salvar Alterações</Button></ModalFooter>
+        </ModalContent>
       </Modal>
+
+      {/* NOVO MODAL: ALERTA DE EXCLUSÃO */}
+      <AlertDialog
+        isOpen={isAlertOpen}
+        leastDestructiveRef={cancelRef}
+        onClose={onAlertClose}
+        isCentered
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize='lg' fontWeight='bold'>
+              Excluir Produto
+            </AlertDialogHeader>
+
+            <AlertDialogBody>
+              Tem certeza que deseja excluir o produto **{skuParaExcluir}**?
+              <Text as="b" color="red.500" display="block" mt={3}>
+                Esta ação não pode ser desfeita e apagará todo o histórico de movimentações deste item.
+              </Text>
+            </AlertDialogBody>
+
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={onAlertClose}>
+                Cancelar
+              </Button>
+              <Button colorScheme='red' onClick={handleDelete} ml={3}>
+                Sim, Excluir
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+
     </Container>
   )
 }
