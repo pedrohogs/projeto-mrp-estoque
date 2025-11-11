@@ -151,10 +151,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Meu Sistema MRP", lifespan=lifespan)
-# Lista de "origens" (front-ends) que podem falar com a gente
+
 origins = [
-    "http://localhost:5173", # A porta do nosso front-end React/Vite
-    "http://localhost:3000", # (Opcional) Porta comum de React
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "https://projeto-mrp-estoque.vercel.app",
+    "https://projeto-mrp-estoque-git-main-pedros-projects-83eed66f.vercel.app" # Adicione todos os seus domínios da Vercel
 ]
 
 # Adiciona o "porteiro" (Middleware) do CORS ao FastAPI
